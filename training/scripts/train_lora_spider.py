@@ -41,7 +41,7 @@ def main():
 
     # Model configuration
     MODEL_NAME = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
-    MAX_SEQ_LENGTH = 4096
+    MAX_SEQ_LENGTH = 512
 
     print(f"Loading model: {MODEL_NAME}")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
@@ -100,7 +100,7 @@ def main():
         tokenized = tokenizer(
             formatted_texts,
             truncation=True,
-            padding=False,  # Will use data collator
+            padding='max_length',
             max_length=MAX_SEQ_LENGTH,
             return_tensors="pt"
         )
