@@ -19,12 +19,16 @@ from pathlib import Path
 
 def setup_device():
     """Setup GPU/CPU device"""
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    if device == "cuda":
-        torch.cuda.set_device(0)  # Use first GPU in Colab
-        print(f"Using GPU: {torch.cuda.get_device_name()}")
+    if torch.cuda.is_available():
+        device = "cuda"
+        torch.cuda.set_device(0)
+        print(f"Using CUDA GPU: {torch.cuda.get_device_name()}")
         print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory // (1024**3)}GB")
+    elif torch.backends.mps.is_available():
+        device = "mps"
+        print("Using MPS GPU (Apple Silicon)")
     else:
+        device = "cpu"
         print("No GPU available, using CPU (not recommended)")
     return device
 
@@ -53,9 +57,9 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
         trust_remote_code=True,
-        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-        device_map="auto" if device == "cuda" else None,
+        torch_dtype=torch.float16 if device in ["cuda", "mps"] else torch.float32,
     )
+    model.to(device)
 
     print(f"Model loaded, parameters: {sum(p.numel() for p in model.parameters()):,}")
 
@@ -79,6 +83,7 @@ def main():
 
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
+    model.train()  # Set to training mode
 
     # Load training data
     print(f"Loading training data from: {training_data_path}")
@@ -118,12 +123,14 @@ def main():
     )
 
     # Training arguments optimized for T4 GPU (16GB VRAM)
+    batch_size = 1 if device == "mps" else 2
+    grad_acc_steps = 16 if device == "mps" else 8
     training_args = TrainingArguments(
         output_dir=str(model_save_path),
         num_train_epochs=3,
-        per_device_train_batch_size=2,  # Small batch size for T4
-        gradient_accumulation_steps=8,  # Effective batch size = 16
-        gradient_checkpointing=True,  # Memory optimization
+        per_device_train_batch_size=batch_size,
+        gradient_accumulation_steps=grad_acc_steps,  # Effective batch size ~16
+        gradient_checkpointing=False if device in ["cpu", "mps"] else True,  # Memory optimization
         optim="adamw_torch_fused",
         save_strategy="epoch",
         logging_steps=50,
